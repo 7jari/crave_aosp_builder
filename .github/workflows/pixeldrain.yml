@@ -1,0 +1,259 @@
+#
+# Copyright (C) 2024-2025 Antonino Scordino
+# Copyright (C) 2024-2025 Souhrud Reddy
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+name: Pixeldrain Uploader
+on:
+  workflow_dispatch:
+    # Various inputs to simplify usage of workflow.
+    inputs:
+      BASE_PROJECT:
+        description: 'Choose a base project:'
+        required: true
+        default: 'LineageOS 21.0'
+        type: choice
+        options:
+          - 'LineageOS 20.0'
+          - 'LineageOS 21.0'
+          - 'LineageOS 22.1'
+          - 'ArrowOS 13.1'
+          - 'DerpFest 14.0'
+          - 'CipherOS 14'
+          - 'PixelOS 15'
+          - 'RisingOS 15 Revived'
+          - 'LineageOS 18.1'
+          - 'LineageOS 16.0'
+          - 'CyanogenMOD 14.1'
+          - 'AOSP'
+      FILE:
+        description: "File name:"
+        required: true
+        default: 'boot.img'
+      DEVICE_NAME:
+        description: "Device's codename:"
+        required: true
+        default: "oxygen"
+
+jobs:
+  prepare:
+    name: Prepare for Building
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check-out to repository
+      uses: actions/checkout@v4
+
+    - name: Check Credentials
+      run: |
+        if [[ -z "${{ secrets.CRAVE_TOKEN }}" || -z "${{ secrets.CRAVE_USERNAME }}" ]]; then
+          echo "Crave Credentials Not Configured! Exiting..."
+          exit 1
+        fi
+        bash scripts/env-checker.sh
+
+    - name: Set Project variables
+      id: proj-variables
+      run: |
+        case "${{ github.event.inputs.BASE_PROJECT }}" in
+        "ArrowOS 13.1")
+          export PROJECTFOLDER="/crave-devspaces/Arrow13"
+          export PROJECTID="73"
+          export REPO_INIT="repo init -u https://github.com/ArrowOS/android_manifest.git -b arrow-13.1 --depth=1"
+        ;;
+        "DerpFest 14.0")
+          export PROJECTFOLDER="/crave-devspaces/DerpFest14"
+          export PROJECTID="64"
+          export REPO_INIT="repo init -u https://github.com/DerpFest-AOSP/manifest.git -b 14 --depth=1"
+        ;;
+        "LineageOS 21.0")
+          export PROJECTFOLDER="/crave-devspaces/Lineage21"
+          export PROJECTID="72"
+          export REPO_INIT="repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --git-lfs --depth=1"
+        ;;
+        "LineageOS 22.1")
+          export PROJECTFOLDER="/crave-devspaces/Lineage22"
+          export PROJECTID="93"
+          export REPO_INIT="repo init -u https://github.com/accupara/los22.git -b lineage-22.1 --git-lfs --depth=1"
+        ;;
+        "LineageOS 20.0")
+          export PROJECTFOLDER="/crave-devspaces/Lineage20"
+          export PROJECTID="36"
+          export REPO_INIT="repo init -u https://github.com/accupara/los20.git -b lineage-20.0 --git-lfs --depth=1"
+        ;;
+        "CipherOS 14")
+          export PROJECTFOLDER="/crave-devspaces/Cipher14"
+          export PROJECTID="79"
+          export REPO_INIT="repo init -u https://github.com/CipherOS/android_manifest.git -b fourteen --git-lfs --depth=1"
+        ;;
+        "PixelOS 15")
+          export PROJECTFOLDER="/crave-devspaces/Pixel15"
+          export PROJECTID="82"
+          export REPO_INIT="repo init -u https://github.com/PixelOS-AOSP/manifest.git -b fifteen --git-lfs --depth=1"
+        ;;
+        "RisingOS 15 Revived")
+          export PROJECTFOLDER="/crave-devspaces/Rising15"
+          export PROJECTID="86"
+          export REPO_INIT="repo init -u https://github.com/RisingOS-Revived/android.git -b fifteen --git-lfs --depth=1"
+        ;;
+        "LineageOS 18.1")
+          export PROJECTFOLDER="/crave-devspaces/Lineage18"
+          export PROJECTID="85"
+          export REPO_INIT="repo init -u https://github.com/accupara/los18.1.git -b lineage-18.1 --git-lfs --depth=1"
+        ;;
+        "LineageOS 16.0")
+          export PROJECTFOLDER="/crave-devspaces/Lineage16"
+          export PROJECTID="81"
+          export REPO_INIT="repo init -u https://github.com/accupara/los16.git -b lineage-16.0 --git-lfs --depth=1"
+        ;;
+        "CyanogenMOD 14.1")
+          export PROJECTFOLDER="/crave-devspaces/Cyanogen14"
+          export PROJECTID="83"
+          export REPO_INIT="repo init -u https://github.com/accupara/los-cm14.1.git -b cm-14.1 --git-lfs --depth=1"
+        ;;
+        "AOSP")
+          export PROJECTFOLDER="/crave-devspaces/AOSP"
+          export PROJECTID="35"
+          export REPO_INIT="repo init -u https://android.googlesource.com/platform/manifest.git -b master --git-lfs --depth=1"
+        ;;
+        esac
+
+        echo "Building on ${{ github.event.inputs.BASE_PROJECT }} project"
+        echo "PROJECTFOLDER=$PROJECTFOLDER" >> "$GITHUB_OUTPUT"
+        echo "PROJECTID=$PROJECTID"  >> "$GITHUB_OUTPUT"
+        echo "REPO_INIT=$REPO_INIT" >> "$GITHUB_OUTPUT"
+
+    outputs:
+      PROJECTFOLDER: ${{ steps.proj-variables.outputs.PROJECTFOLDER }}
+      PROJECTID: ${{ steps.proj-variables.outputs.PROJECTID }}
+      REPO_INIT: ${{ steps.proj-variables.outputs.REPO_INIT }}
+
+  upload:
+    name: Upload to Pixeldrain
+    needs: prepare
+    runs-on: self-hosted
+    concurrency:
+      group: ${{ github.repository_owner }}
+    steps:
+      # Accept Project Variables
+    - name: Set Repo Project
+      run: |
+        PROJECTFOLDER="${{ needs.prepare.outputs.PROJECTFOLDER }}"
+        PROJECTID="${{ needs.prepare.outputs.PROJECTID }}"
+        REPO_INIT="${{ needs.prepare.outputs.REPO_INIT }}"
+
+        echo "PROJECTFOLDER=$PROJECTFOLDER" >> "$GITHUB_ENV"
+        echo "PROJECTID=$PROJECTID"  >> "$GITHUB_ENV"
+        echo "REPO_INIT=$REPO_INIT" >> "$GITHUB_ENV"
+
+    - name: Cleanup
+      run: rm -rf * # This cleans github actions workspace
+
+    - name: Check for a broken .bashrc
+      continue-on-error: true
+      run: |
+        (
+          set +e
+          output=$(source ~/.bashrc 2>&1)
+          status=$?
+          echo "$output"
+          if [[ $status -ne 0 ]]; then
+            echo "You have a broken .bashrc, please contact a Crave.io Administrator"
+            exit 1
+          else
+            echo ".bashrc looks okay, no explicit errors"
+          fi
+
+          # Double check to be sure
+          if echo "$output" | grep -q "cannot execute"; then
+            echo "You have a broken .bashrc, please contact a Crave.io Administrator"
+            exit 1
+          fi
+        )
+
+    # Create a project folder
+    - name: Create Project Folders
+      run: |
+        echo "DCDEVSPACE status: ${DCDEVSPACE}"
+        if [[ $DCDEVSPACE != *1* ]]; then
+
+          #curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- 
+
+          #mkdir -p ${HOME}/bin/
+          #mv ${PWD}/crave ${HOME}/bin/ 
+          #sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave; sudo chmod +x /usr/bin/crave 
+
+          echo "Symlinking devspace folder"
+          mkdir -p devspace
+          sudo mkdir -p /crave-devspaces
+          sudo ln -sf ${pwd}/devspace /crave-devspaces
+          sudo chmod 777 /crave-devspaces
+        else
+          echo "We are already running in devspace... Skipping Symlinks"
+        fi
+        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]]; then
+          crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
+        else          
+        echo "Skipping removal"
+        fi
+
+        if [[ $DCDEVSPACE == *1* ]]; then
+          crave clone create --projectID $PROJECTID $PROJECTFOLDER || echo "Crave clone create failed!"
+        else
+          mkdir -p $PROJECTFOLDER
+        fi
+        
+      # Check-out in order to access the repository's files.
+    - name: Check-out to repository
+      uses: actions/checkout@v6
+      
+      # Generate 'git' credential in base of the workflow's author.
+    - name: Set-up 'git' credential(s)
+      run: |
+        git config --global user.name "${{ github.actor }}"
+        git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+      
+      # Download and configure 'crave'.
+    - name: Configure the 'crave' environment
+      run: |
+        echo "DCDEVSPACE status: ${DCDEVSPACE}"
+        mkdir -p $PROJECTFOLDER/.repo/manifests
+        if [[ $DCDEVSPACE == *1* ]]; then
+        echo 'No need to set up crave, we are already running in devspace!'
+        else
+          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
+          mv ${PWD}/crave ${HOME}/bin/
+          sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
+          envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
+          rm -rf ${PWD}/crave.conf.sample       
+          cp crave.conf $PROJECTFOLDER 
+        fi
+        if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
+          cp configs/crave/crave.yaml.aosp $PROJECTFOLDER/.repo/manifests/crave.yaml
+          echo "No Custom Configuration Found, Using Template!"
+        else
+          touch $PROJECTFOLDER/.repo/manifests/crave.yaml || true
+          echo "${{ secrets.CUSTOM_YAML }}" > $PROJECTFOLDER/.repo/manifests/crave.yaml
+          echo "Custom Configuration Found!"
+        fi
+      env:
+        CRAVE_USERNAME: ${{  secrets.CRAVE_USERNAME  }}
+        CRAVE_TOKEN: ${{  secrets.CRAVE_TOKEN  }}
+
+      # Upload '.zip's and '.img's directly from 'crave' ssh.
+    - name: Upload build artifact(s)
+      continue-on-error: true
+      run: |
+        cd $PROJECTFOLDER
+        crave ssh -- 'curl -T "$(ls out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.FILE }})" -u :${{ secrets.PIXELDRAIN_API_KEY }} https://pixeldrain.com/api/file/'
+
+      # Remove 'crave' clone
+    - name: Destroy Crave Clone
+      if: ${{ always() }}
+      run: |
+        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]]; then
+          crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
+        else          
+          echo "Skipping removal"
+        fi
